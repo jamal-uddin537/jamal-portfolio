@@ -709,6 +709,9 @@ img {
 }
 
 @media (max-width: 640px) {
+  .hero-desktop-br {
+    display: none;
+  }
   .hero-metrics {
     grid-template-columns: repeat(2, 1fr);
     gap: 20px 16px;
