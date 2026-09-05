@@ -9,6 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
   initTimeWidget();
   initScrollSpy();
   initBackToTop();
+  initCursorSpotlight();
+  initPortraitTilt();
+  initScrollReveal();
+  initAnimatedMetrics();
   initOpportunitySwitcher();
   initDiffusionBondingSimulator();
   initClipboardActions();
@@ -321,6 +325,68 @@ function initDiffusionBondingSimulator() {
   let isPlaying = false;
   let animFrameId = null;
 
+  // Interactive Mouse Probe Tracking on Canvas
+  let mouse = { x: -1, y: -1, active: false };
+  const probeTooltip = document.getElementById('sim-probe-tooltip');
+  const probeStress = document.getElementById('probe-stress');
+  const probePress = document.getElementById('probe-press');
+  const probeStrain = document.getElementById('probe-strain');
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    mouse.active = true;
+
+    if (probeTooltip) {
+      probeTooltip.classList.add('active');
+      const midY = rect.height / 2;
+      const distY = Math.abs(mouse.y - midY);
+      const P = parseFloat(pressSlider.value);
+      const T = parseFloat(tempSlider.value);
+      const curBond = parseFloat(resBond.textContent) || 90;
+      const curVoid = 100 - curBond;
+
+      // Local stress concentration near interface & void regions
+      const conc = 1 + (curVoid / 100) * 1.8 * Math.exp(-distY / 22);
+      const localStressVal = (P * 14.5 * conc).toFixed(1);
+      const localPressVal = (P * (1 + 0.9 * Math.exp(-distY / 14))).toFixed(1);
+
+      if (probeStress) probeStress.textContent = `${localStressVal} MPa`;
+      if (probePress) probePress.textContent = `${localPressVal} MPa`;
+      if (probeStrain) {
+        probeStrain.textContent = distY < 14 ? 'Yield / Diffusion' : (distY < 32 ? 'Viscoplastic' : 'Elastic Base');
+      }
+    }
+    calculateBonding();
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    mouse.active = false;
+    if (probeTooltip) {
+      probeTooltip.classList.remove('active');
+    }
+    calculateBonding();
+  });
+
+  // Deterministic Ti-60 Polycrystalline Grain Boundary Network
+  const grainBoundaries = [
+    // Upper Specimen Grains
+    [0.08, 0.12, 0.16, 0.36], [0.16, 0.36, 0.25, 0.18], [0.25, 0.18, 0.34, 0.40],
+    [0.34, 0.40, 0.44, 0.15], [0.44, 0.15, 0.52, 0.38], [0.52, 0.38, 0.62, 0.14],
+    [0.62, 0.14, 0.72, 0.39], [0.72, 0.39, 0.82, 0.19], [0.82, 0.19, 0.90, 0.41],
+    // Near Upper Interface Subgrains
+    [0.16, 0.36, 0.20, 0.49], [0.34, 0.40, 0.38, 0.49], [0.52, 0.38, 0.55, 0.49],
+    [0.72, 0.39, 0.74, 0.49], [0.90, 0.41, 0.92, 0.49],
+    // Lower Specimen Grains
+    [0.06, 0.85, 0.14, 0.62], [0.14, 0.62, 0.24, 0.84], [0.24, 0.84, 0.35, 0.59],
+    [0.35, 0.59, 0.46, 0.83], [0.46, 0.83, 0.54, 0.61], [0.54, 0.61, 0.65, 0.85],
+    [0.65, 0.85, 0.74, 0.62], [0.74, 0.62, 0.84, 0.82], [0.84, 0.82, 0.92, 0.61],
+    // Near Lower Interface Subgrains
+    [0.14, 0.62, 0.20, 0.51], [0.35, 0.59, 0.38, 0.51], [0.54, 0.61, 0.55, 0.51],
+    [0.74, 0.62, 0.74, 0.51], [0.92, 0.61, 0.92, 0.51]
+  ];
+
   function calculateBonding() {
     const T = parseFloat(tempSlider.value); // °C (860 to 940)
     const P = parseFloat(pressSlider.value); // MPa (1.0 to 5.0)
@@ -441,6 +507,33 @@ function initDiffusionBondingSimulator() {
       ctx.stroke();
     }
 
+    // 3b. Crystalline Grain Boundaries
+    ctx.save();
+    ctx.strokeStyle = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.07)';
+    ctx.lineWidth = 1;
+    grainBoundaries.forEach(([x1r, y1r, x2r, y2r]) => {
+      ctx.beginPath();
+      ctx.moveTo(plateMargin + x1r * plateWidth, plateMargin + y1r * (h - 32));
+      ctx.lineTo(plateMargin + x2r * plateWidth, plateMargin + y2r * (h - 32));
+      ctx.stroke();
+    });
+
+    // Solid-State Diffusion Grain Boundary Fusion across Interface (>80% bond)
+    if (bondRatio > 80) {
+      const fusionAlpha = (bondRatio - 80) / 20;
+      ctx.strokeStyle = isLight ? `rgba(16, 185, 129, ${0.45 * fusionAlpha})` : `rgba(56, 189, 248, ${0.45 * fusionAlpha})`;
+      ctx.lineWidth = 1.3;
+      const bridges = [0.20, 0.38, 0.55, 0.74, 0.92];
+      bridges.forEach(xr => {
+        const bx = plateMargin + xr * plateWidth;
+        ctx.beginPath();
+        ctx.moveTo(bx, midY - 6);
+        ctx.lineTo(bx, midY + 6);
+        ctx.stroke();
+      });
+    }
+    ctx.restore();
+
     // 4. Draw Interfacial Stress Gradient & Bonding Layer
     const stressHeight = Math.max(2, (P / 5.0) * 16);
     const stressGrad = ctx.createLinearGradient(0, midY - stressHeight, 0, midY + stressHeight);
@@ -491,6 +584,40 @@ function initDiffusionBondingSimulator() {
     ctx.fillText(`INTERFACE: ${bondRatio.toFixed(1)}% BONDED`, w - plateMargin - 10, plateMargin + 18);
     ctx.fillStyle = statusColor;
     ctx.fillText(`STATUS: ${resStatus.textContent.toUpperCase()}`, w - plateMargin - 10, h - plateMargin - 10);
+
+    // 8. Crosshair Probe on Hover
+    if (mouse.active && mouse.x >= plateMargin && mouse.x <= w - plateMargin && mouse.y >= plateMargin && mouse.y <= h - plateMargin) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 94, 54, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+
+      // Vertical crosshair
+      ctx.beginPath();
+      ctx.moveTo(mouse.x, plateMargin);
+      ctx.lineTo(mouse.x, h - plateMargin);
+      ctx.stroke();
+
+      // Horizontal crosshair
+      ctx.beginPath();
+      ctx.moveTo(plateMargin, mouse.y);
+      ctx.lineTo(w - plateMargin, mouse.y);
+      ctx.stroke();
+
+      // Target node circle
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#ff5e36';
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
+      ctx.font = '600 9px JetBrains Mono, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(`NODE (${Math.round(mouse.x)}, ${Math.round(mouse.y)})`, mouse.x + 8, mouse.y - 8);
+
+      ctx.restore();
+    }
 
     ctx.restore();
   }
@@ -586,15 +713,17 @@ function initClipboardActions() {
     const icon = elem.querySelector('.c-icon');
     const typeLabel = elem.querySelector('.c-type');
 
-    const originalIcon = icon ? icon.textContent : '';
+    const originalIconHtml = icon ? icon.innerHTML : '';
     const originalLabel = typeLabel ? typeLabel.textContent : '';
 
-    if (icon) icon.textContent = '✓';
+    if (icon) {
+      icon.innerHTML = '<svg class="c-action-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    }
     if (typeLabel) typeLabel.textContent = 'Copied to Clipboard!';
 
     setTimeout(() => {
       elem.classList.remove('copied');
-      if (icon) icon.textContent = originalIcon;
+      if (icon) icon.innerHTML = originalIconHtml;
       if (typeLabel) typeLabel.textContent = originalLabel;
     }, 2000);
   }
@@ -719,4 +848,114 @@ function initContactForm() {
       }, 4000);
     }
   });
+}
+
+/* --------------------------------------------------------------------------
+   10. Interactive Ambient Cursor Spotlight
+   -------------------------------------------------------------------------- */
+function initCursorSpotlight() {
+  const spotlight = document.getElementById('cursor-spotlight');
+  if (!spotlight || window.matchMedia('(pointer: coarse)').matches) return;
+
+  let mouseX = -600;
+  let mouseY = -600;
+  let currentX = -600;
+  let currentY = -600;
+  let isVisible = false;
+
+  window.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (!isVisible) {
+      spotlight.style.opacity = '1';
+      isVisible = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('mouseleave', () => {
+    spotlight.style.opacity = '0';
+    isVisible = false;
+  });
+
+  function update() {
+    currentX += (mouseX - currentX) * 0.12;
+    currentY += (mouseY - currentY) * 0.12;
+    spotlight.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    requestAnimationFrame(update);
+  }
+  requestAnimationFrame(update);
+}
+
+/* --------------------------------------------------------------------------
+   11. 3D Interactive Portrait Parallax Tilt
+   -------------------------------------------------------------------------- */
+function initPortraitTilt() {
+  const frame = document.querySelector('.portrait-frame');
+  if (!frame || window.matchMedia('(pointer: coarse)').matches) return;
+
+  frame.addEventListener('mousemove', (e) => {
+    const rect = frame.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+
+    const rotateX = ((y - centerY) / centerY) * -9; // -9deg to +9deg
+    const rotateY = ((x - centerX) / centerX) * 9;   // -9deg to +9deg
+
+    frame.style.transform = `perspective(1000px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg) translateY(-4px)`;
+  });
+
+  frame.addEventListener('mouseleave', () => {
+    frame.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0)';
+  });
+}
+
+/* --------------------------------------------------------------------------
+   12. Scroll-Triggered Reveal Animations
+   -------------------------------------------------------------------------- */
+function initScrollReveal() {
+  const revealElements = document.querySelectorAll('.reveal-on-scroll');
+  if (!revealElements.length) return;
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-revealed');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    root: null,
+    rootMargin: '0px 0px -50px 0px',
+    threshold: 0.1
+  });
+
+  revealElements.forEach(el => observer.observe(el));
+}
+
+/* --------------------------------------------------------------------------
+   13. Animated Hero Metric Highlights
+   -------------------------------------------------------------------------- */
+function initAnimatedMetrics() {
+  const metricItems = document.querySelectorAll('.hero-metrics .metric-item');
+  if (!metricItems.length) return;
+
+  const hero = document.querySelector('.hero-section');
+  if (!hero) return;
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        metricItems.forEach((item, index) => {
+          setTimeout(() => {
+            item.classList.add('metric-animated');
+          }, index * 120);
+        });
+        observer.disconnect();
+      }
+    });
+  }, { threshold: 0.2 });
+
+  observer.observe(hero);
 }
