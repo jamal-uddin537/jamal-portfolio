@@ -6,7 +6,6 @@ Personal portfolio website for **Jamal Ud Din**, showcasing graduate research in
 
 ```
 ├── index.html                 # Main website entry point
-├── Jamal_CV.pdf               # Original CV document for direct download
 ├── assets/
 │   ├── css/
 │   │   └── style.css          # Design system, themes (Dark/Light), animations
